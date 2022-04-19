@@ -167,18 +167,6 @@ const nativeBridge = (function (exports) {
             win.Capacitor = cap;
             win.Ionic.WebView = IonicWebView;
         };
-        const safeStringify = (value) => {
-            const seen = new Set();
-            return JSON.stringify(value, (_k, v) => {
-                if (seen.has(v)) {
-                    return '...';
-                }
-                if (typeof v === 'object') {
-                    seen.add(v);
-                }
-                return v;
-            });
-        };
         const initLogger = (win, cap) => {
             const BRIDGED_CONSOLE_METHODS = [
                 'debug',
@@ -245,7 +233,7 @@ const nativeBridge = (function (exports) {
             const serializeConsoleMessage = (msg) => {
                 if (typeof msg === 'object') {
                     try {
-                        msg = safeStringify(msg);
+                        msg = JSON.stringify(msg);
                     }
                     catch (e) {
                         // ignore
@@ -255,24 +243,21 @@ const nativeBridge = (function (exports) {
             };
             // patch window.console on iOS and store original console fns
             const isIos = getPlatformId(win) === 'ios';
-            const originalConsole = Object.assign({}, win.console);
             if (win.console && isIos) {
-                for (const logfn of BRIDGED_CONSOLE_METHODS) {
-                    win.console[logfn] = (...args) => {
-                        const msgs = [...args];
-                        originalConsole[logfn](...msgs);
-                        try {
+                Object.defineProperties(win.console, BRIDGED_CONSOLE_METHODS.reduce((props, method) => {
+                    const consoleMethod = win.console[method].bind(win.console);
+                    props[method] = {
+                        value: (...args) => {
+                            const msgs = [...args];
                             cap.toNative('Console', 'log', {
-                                level: logfn,
+                                level: method,
                                 message: msgs.map(serializeConsoleMessage).join(' '),
                             });
-                        }
-                        catch (e) {
-                            // error converting/posting console messages
-                            originalConsole.error(e);
-                        }
+                            return consoleMethod(...args);
+                        },
                     };
-                }
+                    return props;
+                }, {}));
             }
             cap.logJs = (msg, level) => {
                 switch (level) {
@@ -317,7 +302,7 @@ const nativeBridge = (function (exports) {
                 postToNative = data => {
                     var _a;
                     try {
-                        win.androidBridge.postMessage(safeStringify(data));
+                        win.androidBridge.postMessage(JSON.stringify(data));
                     }
                     catch (e) {
                         (_a = win === null || win === void 0 ? void 0 : win.console) === null || _a === void 0 ? void 0 : _a.error(e);
@@ -348,7 +333,7 @@ const nativeBridge = (function (exports) {
                             url: url,
                             line: lineNo,
                             col: columnNo,
-                            errorObject: safeStringify(err),
+                            errorObject: JSON.stringify(err),
                         },
                     };
                     if (err !== null) {
@@ -498,4 +483,4 @@ const nativeBridge = (function (exports) {
 
     return exports;
 
-}({}));
+})({});

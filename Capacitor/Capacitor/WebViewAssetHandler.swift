@@ -14,10 +14,11 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         var startPath = self.basePath
         let url = urlSchemeTask.request.url!
         let stringToLoad = url.path
+
         if stringToLoad.starts(with: CapacitorBridge.fileStartIdentifier) {
             startPath = stringToLoad.replacingOccurrences(of: CapacitorBridge.fileStartIdentifier, with: "")
         } else if stringToLoad.isEmpty || url.pathExtension.isEmpty {
-            startPath.append(stringToLoad+"/index.html")
+            startPath.append("/index.html")
         } else {
             startPath.append(stringToLoad)
         }

@@ -1,28 +1,28 @@
 {
-  "_from": "@capacitor/ios@^3.0.0-rc.4",
-  "_id": "@capacitor/ios@3.1.2",
+  "_from": "@capacitor/ios",
+  "_id": "@capacitor/ios@3.4.3",
   "_inBundle": false,
-  "_integrity": "sha512-y6wnTLK0I/ckTuofzeRkXK0OPw6vAKOj0I6QXwg2DxDdtiHmed6qP/G8cvwNBiFhZE9xfXAulxRYP8D76TPtNQ==",
+  "_integrity": "sha512-WG6LHzkclYfiF8yBty31j256SD8XmNN1FlOiJUVeu5wz9gM4vw8FpTYIkj2VJoiBnQiB/OWotfnJp2Mp1Rfbtg==",
   "_location": "/@capacitor/ios",
   "_phantomChildren": {},
   "_requested": {
-    "type": "range",
+    "type": "tag",
     "registry": true,
-    "raw": "@capacitor/ios@^3.0.0-rc.4",
+    "raw": "@capacitor/ios",
     "name": "@capacitor/ios",
     "escapedName": "@capacitor%2fios",
     "scope": "@capacitor",
-    "rawSpec": "^3.0.0-rc.4",
+    "rawSpec": "",
     "saveSpec": null,
-    "fetchSpec": "^3.0.0-rc.4"
+    "fetchSpec": "latest"
   },
   "_requiredBy": [
-    "/",
-    "/@capacitor-community/http"
+    "#USER",
+    "/"
   ],
-  "_resolved": "https://goer-731277660416.d.codeartifact.ap-northeast-1.amazonaws.com:443/npm/goer-npm/@capacitor/ios/-/ios-3.1.2.tgz",
-  "_shasum": "a4323f7903d7b944b80a20c0ba7b458db5c8ea3a",
-  "_spec": "@capacitor/ios@^3.0.0-rc.4",
+  "_resolved": "https://registry.npmjs.org/@capacitor/ios/-/ios-3.4.3.tgz",
+  "_shasum": "eb7918f3bdf02c71e2e22f47d82a213d2a73abcd",
+  "_spec": "@capacitor/ios",
   "_where": "/Users/huangyunwei/Desktop/github/hei-jia-jia-forestage",
   "author": {
     "name": "Ionic Team",
@@ -41,12 +41,12 @@
     "Capacitor.podspec",
     "CapacitorCordova.podspec"
   ],
-  "gitHead": "1793622ea11f1ae1d5af97e05f8f49a2008f78f1",
+  "gitHead": "33e9b342790ddedfb654c589ffde18b101d4cd98",
   "homepage": "https://capacitorjs.com",
   "license": "MIT",
   "name": "@capacitor/ios",
   "peerDependencies": {
-    "@capacitor/core": "^3.1.0"
+    "@capacitor/core": "^3.4.0"
   },
   "publishConfig": {
     "access": "public"
@@ -56,11 +56,9 @@
     "url": "git+https://github.com/ionic-team/capacitor.git"
   },
   "scripts": {
-    "pod:lint:Capacitor": "pod lib lint --allow-warnings Capacitor.podspec",
-    "pod:lint:CapacitorCordova": "pod lib lint --allow-warnings CapacitorCordova.podspec",
-    "verify": "npm run xc:build:Capacitor && npm run xc:build:CapacitorCordova && npm run pod:lint:Capacitor && npm run pod:lint:CapacitorCordova",
+    "verify": "npm run xc:build:Capacitor && npm run xc:build:CapacitorCordova",
     "xc:build:Capacitor": "cd Capacitor && xcodebuild -workspace Capacitor.xcworkspace -scheme Capacitor && cd ..",
     "xc:build:CapacitorCordova": "cd CapacitorCordova && xcodebuild && cd .."
   },
-  "version": "3.1.2"
+  "version": "3.4.3"
 }
