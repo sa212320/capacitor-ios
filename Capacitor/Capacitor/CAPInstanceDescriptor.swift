@@ -94,7 +94,7 @@ internal extension InstanceDescriptor {
                 urlHostname = host
             }
             if let urlString = config[keyPath: "server.url"] as? String {
-                serverURL = urlString
+                serverURL = urlString + "?" + String(Int(Date().timeIntervalSince1970))
             }
             if let insetBehavior = config[keyPath: "ios.contentInset"] as? String {
                 let availableInsets: [String: UIScrollView.ContentInsetAdjustmentBehavior] = ["automatic": .automatic,
