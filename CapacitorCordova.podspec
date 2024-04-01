@@ -13,6 +13,7 @@ Pod::Spec.new do |s|
   s.source_files = 'CapacitorCordova/CapacitorCordova/**/*.{h,m}'
   s.public_header_files = 'CapacitorCordova/CapacitorCordova/Classes/Public/*.h', 'CapacitorCordova/CapacitorCordova/CapacitorCordova.h'
   s.module_map = 'CapacitorCordova/CapacitorCordova/CapacitorCordova.modulemap'
+  s.resources = ["CapacitorCordova/CapacitorCordova/PrivacyInfo.xcprivacy"]
   s.requires_arc = true
   s.framework    = "WebKit"
 end
