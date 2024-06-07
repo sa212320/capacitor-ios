@@ -296,6 +296,12 @@ extension CAPBridgeViewController {
             aWebView.backgroundColor = UIColor.systemBackground
             aWebView.scrollView.backgroundColor = UIColor.systemBackground
         }
+        #if DEBUG
+            if #available(iOS 16.4, *) {
+                aWebView.isInspectable = true
+            }
+        #endif
+                
         aWebView.capacitor.setKeyboardShouldRequireUserInteraction(false)
         // set our ivar
         webView = aWebView
