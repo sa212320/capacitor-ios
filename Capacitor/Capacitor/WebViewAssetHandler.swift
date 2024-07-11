@@ -2,27 +2,50 @@ import Foundation
 import MobileCoreServices
 
 @objc(CAPWebViewAssetHandler)
-internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
+// swiftlint:disable type_body_length
+open class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
+    private var router: Router
+    private var serverUrl: URL?
 
-    private var basePath: String = ""
-
-    func setAssetPath(_ assetPath: String) {
-        self.basePath = assetPath
+    public init(router: Router) {
+        self.router = router
+        super.init()
     }
 
-    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        var startPath = self.basePath
+    open func setAssetPath(_ assetPath: String) {
+        router.basePath = assetPath
+    }
+
+    open func setServerUrl(_ serverUrl: URL?) {
+        self.serverUrl = serverUrl
+    }
+
+    private func isUsingLiveReload(_ localUrl: URL) -> Bool {
+        return self.serverUrl != nil && self.serverUrl?.scheme != localUrl.scheme
+    }
+
+    open func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        let startPath: String
         let url = urlSchemeTask.request.url!
         let stringToLoad = url.path
+        let localUrl = URL.init(string: url.absoluteString)!
+
+        if url.path.starts(with: CapacitorBridge.httpInterceptorStartIdentifier) {
+            handleCapacitorHttpRequest(urlSchemeTask, localUrl, false)
+            return
+        }
+
+        if url.path.starts(with: CapacitorBridge.httpsInterceptorStartIdentifier) {
+            handleCapacitorHttpRequest(urlSchemeTask, localUrl, true)
+            return
+        }
 
         if stringToLoad.starts(with: CapacitorBridge.fileStartIdentifier) {
             startPath = stringToLoad.replacingOccurrences(of: CapacitorBridge.fileStartIdentifier, with: "")
-        } else if stringToLoad.isEmpty || url.pathExtension.isEmpty {
-            startPath.append("/index.html")
         } else {
-            startPath.append(stringToLoad)
+            startPath = router.route(for: stringToLoad)
         }
-        let localUrl = URL.init(string: url.absoluteString)!
+
         let fileUrl = URL.init(fileURLWithPath: startPath)
 
         do {
@@ -32,6 +55,13 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
                 "Content-Type": mimeType,
                 "Cache-Control": "no-cache"
             ]
+
+            // if using live reload, then set CORS headers
+            if isUsingLiveReload(localUrl) {
+                headers["Access-Control-Allow-Origin"] = self.serverUrl?.absoluteString
+                headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS, TRACE"
+            }
+
             if let rangeString = urlSchemeTask.request.value(forHTTPHeaderField: "Range"),
                let totalSize = try fileUrl.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                isMediaExtension(pathExtension: url.pathExtension) {
@@ -44,22 +74,14 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
                     toRange = Int(streamParts[1]) ?? toRange
                 }
                 let rangeLength = toRange - fromRange + 1
-                if #available(iOS 13.0, *) {
-                    try fileHandle.seek(toOffset: UInt64(fromRange))
-                } else {
-                    // Fallback on earlier versions
-                }
+                try fileHandle.seek(toOffset: UInt64(fromRange))
                 data = fileHandle.readData(ofLength: rangeLength)
                 headers["Accept-Ranges"] = "bytes"
                 headers["Content-Range"] = "bytes \(fromRange)-\(toRange)/\(totalSize)"
                 headers["Content-Length"] = String(data.count)
                 let response = HTTPURLResponse(url: localUrl, statusCode: 206, httpVersion: nil, headerFields: headers)
                 urlSchemeTask.didReceive(response!)
-                if #available(iOS 13.0, *) {
-                    try fileHandle.close()
-                } else {
-                    // Fallback on earlier versions
-                }
+                try fileHandle.close()
             } else {
                 if !stringToLoad.contains("cordova.js") {
                     if isMediaExtension(pathExtension: url.pathExtension) {
@@ -84,11 +106,11 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         urlSchemeTask.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
-        CAPLog.print("scheme stop")
+    open func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+        urlSchemeTask.stopped = true
     }
 
-    func mimeTypeForExtension(pathExtension: String) -> String {
+    open func mimeTypeForExtension(pathExtension: String) -> String {
         if !pathExtension.isEmpty {
             if let uti = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, pathExtension as NSString, nil)?.takeRetainedValue() {
                 if let mimetype = UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType)?.takeRetainedValue() {
@@ -104,13 +126,78 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         return "text/html"
     }
 
-    func isMediaExtension(pathExtension: String) -> Bool {
+    open func isMediaExtension(pathExtension: String) -> Bool {
         let mediaExtensions = ["m4v", "mov", "mp4",
                                "aac", "ac3", "aiff", "au", "flac", "m4a", "mp3", "wav"]
         if mediaExtensions.contains(pathExtension.lowercased()) {
             return true
         }
         return false
+    }
+
+    func handleCapacitorHttpRequest(_ urlSchemeTask: WKURLSchemeTask, _ localUrl: URL, _ isHttpsRequest: Bool) {
+        var urlRequest = urlSchemeTask.request
+        guard let url = urlRequest.url else { return }
+        var targetUrl = url.absoluteString
+            .replacingOccurrences(of: CapacitorBridge.httpInterceptorStartIdentifier, with: "")
+            .replacingOccurrences(of: CapacitorBridge.httpsInterceptorStartIdentifier, with: "")
+        // Only replace first occurrence of the scheme
+        if let range = targetUrl.range(of: localUrl.scheme ?? InstanceDescriptorDefaults.scheme) {
+            targetUrl = targetUrl.replacingCharacters(in: range, with: isHttpsRequest ? "https" : "http")
+        }
+
+        // Only replace first occurrence of the hostname
+        if let range = targetUrl.range(of: (localUrl.host ?? InstanceDescriptorDefaults.hostname) + "/") {
+            targetUrl = targetUrl.replacingCharacters(in: range, with: "")
+        }
+
+        urlRequest.url = URL(string: targetUrl.removingPercentEncoding ?? targetUrl)
+
+        let urlSession = URLSession.shared
+        let task = urlSession.dataTask(with: urlRequest) { (data, response, error) in
+            DispatchQueue.main.async {
+                guard !urlSchemeTask.stopped else { return }
+                if let error = error {
+                    urlSchemeTask.didFailWithError(error)
+                    return
+                }
+
+                if let response = response as? HTTPURLResponse {
+                    let existingHeaders = response.allHeaderFields
+                    var newHeaders: [AnyHashable: Any] = [:]
+
+                    // if using live reload, then set CORS headers
+                    if self.isUsingLiveReload(url) {
+                        newHeaders = [
+                            "Access-Control-Allow-Origin": self.serverUrl?.absoluteString ?? "",
+                            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, TRACE"
+                        ]
+                    }
+
+                    if let mergedHeaders = existingHeaders.merging(newHeaders, uniquingKeysWith: { (_, newHeaders) in newHeaders }) as? [String: String] {
+
+                        if let responseUrl = response.url {
+                            if let modifiedResponse = HTTPURLResponse(
+                                url: responseUrl,
+                                statusCode: response.statusCode,
+                                httpVersion: nil,
+                                headerFields: mergedHeaders
+                            ) {
+                                urlSchemeTask.didReceive(modifiedResponse)
+                            }
+                        }
+
+                        if let data = data {
+                            urlSchemeTask.didReceive(data)
+                        }
+                    }
+                }
+                urlSchemeTask.didFinish()
+                return
+            }
+        }
+
+        task.resume()
     }
 
     public let mimeTypes = [
@@ -241,7 +328,6 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         "m14": "application/x-msmediaview",
         "m1v": "video/mpeg",
         "m3u": "audio/x-mpegurl",
-        "m3u8": "application/x-mpegurl",
         "man": "application/x-troff-man",
         "manifest": "application/x-ms-manifest",
         "map": "text/plain",
@@ -384,7 +470,6 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         "toc": "application/octet-stream",
         "tr": "application/x-troff",
         "trm": "application/x-msterminal",
-        "ts": "video/MP2T",
         "tsv": "text/tab-separated-values",
         "ttf": "application/octet-stream",
         "txt": "text/plain",
@@ -463,4 +548,17 @@ internal class WebViewAssetHandler: NSObject, WKURLSchemeHandler {
         "z": "application/x-compress",
         "zip": "application/x-zip-compressed"
     ]
+}
+
+private var stoppedKey = malloc(1)
+
+private extension WKURLSchemeTask {
+    var stopped: Bool {
+        get {
+            return objc_getAssociatedObject(self, &stoppedKey) as? Bool ?? false
+        }
+        set {
+            objc_setAssociatedObject(self, &stoppedKey, newValue, .OBJC_ASSOCIATION_ASSIGN)
+        }
+    }
 }

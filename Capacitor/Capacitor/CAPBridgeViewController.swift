@@ -12,15 +12,15 @@ import Cordova
 
     public var isStatusBarVisible = true
     public var statusBarStyle: UIStatusBarStyle = .default
-    public var statusBarAnimation: UIStatusBarAnimation = .slide
+    public var statusBarAnimation: UIStatusBarAnimation = .fade
     @objc public var supportedOrientations: [Int] = []
 
     public lazy final var isNewBinary: Bool = {
         if let curVersionCode = Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
            let curVersionName = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            if let lastVersionCode = UserDefaults.standard.string(forKey: "lastBinaryVersionCode"),
-               let lastVersionName = UserDefaults.standard.string(forKey: "lastBinaryVersionName") {
-                return (curVersionCode.isEqual(lastVersionCode) == false || curVersionName.isEqual(lastVersionName) == false)
+            if let lastVersionCode = KeyValueStore.standard["lastBinaryVersionCode", as: String.self],
+               let lastVersionName = KeyValueStore.standard["lastBinaryVersionName", as: String.self] {
+                return curVersionCode != lastVersionCode || curVersionName != lastVersionName
             }
             return true
         }
@@ -34,16 +34,13 @@ import Cordova
         CAPLog.enableLogging = configuration.loggingEnabled
         logWarnings(for: configDescriptor)
 
-        if configDescriptor.instanceType == .fixed {
-            updateBinaryVersion()
-        }
-
         setStatusBarDefaults()
         setScreenOrientationDefaults()
 
         // get the web view
-        let assetHandler = WebViewAssetHandler()
+        let assetHandler = WebViewAssetHandler(router: router())
         assetHandler.setAssetPath(configuration.appLocation.path)
+        assetHandler.setServerUrl(configuration.serverURL)
         let delegationHandler = WebViewDelegationHandler()
         prepareWebView(with: configuration, assetHandler: assetHandler, delegationHandler: delegationHandler)
         view = webView
@@ -54,6 +51,10 @@ import Cordova
                                           assetHandler: assetHandler,
                                           delegationHandler: delegationHandler)
         capacitorDidLoad()
+
+        if configDescriptor.instanceType == .fixed {
+            updateBinaryVersion()
+        }
     }
 
     override open func viewDidLoad() {
@@ -78,7 +79,7 @@ import Cordova
     open func instanceDescriptor() -> InstanceDescriptor {
         let descriptor = InstanceDescriptor.init()
         if !isNewBinary && !descriptor.cordovaDeployDisabled {
-            if let persistedPath = UserDefaults.standard.string(forKey: "serverBasePath"), !persistedPath.isEmpty {
+            if let persistedPath = KeyValueStore.standard["serverBasePath", as: String.self], !persistedPath.isEmpty {
                 if let libPath = NSSearchPathForDirectoriesInDomains(.libraryDirectory, .userDomainMask, true).first {
                     descriptor.appLocation = URL(fileURLWithPath: libPath, isDirectory: true)
                         .appendingPathComponent("NoCloud")
@@ -88,6 +89,10 @@ import Cordova
             }
         }
         return descriptor
+    }
+
+    open func router() -> Router {
+        return CapacitorRouter()
     }
 
     /**
@@ -101,6 +106,7 @@ import Cordova
      */
     open func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
         let webViewConfiguration = WKWebViewConfiguration()
+        webViewConfiguration.websiteDataStore.httpCookieStore.add(CapacitorWKCookieObserver())
         webViewConfiguration.allowsInlineMediaPlayback = true
         webViewConfiguration.suppressesIncrementalRendering = false
         webViewConfiguration.allowsAirPlayForMediaPlayback = true
@@ -114,6 +120,15 @@ import Cordova
             } else {
                 webViewConfiguration.applicationNameForUserAgent = appendUserAgent
             }
+        }
+        if let preferredContentMode = instanceConfiguration.preferredContentMode {
+            var mode = WKWebpagePreferences.ContentMode.recommended
+            if preferredContentMode == "mobile" {
+                mode = WKWebpagePreferences.ContentMode.mobile
+            } else if preferredContentMode == "desktop" {
+                mode = WKWebpagePreferences.ContentMode.desktop
+            }
+            webViewConfiguration.defaultWebpagePreferences.preferredContentMode = mode
         }
         return webViewConfiguration
     }
@@ -162,11 +177,7 @@ import Cordova
             }
             if let statusBarStyle = plist["UIStatusBarStyle"] as? String {
                 if statusBarStyle == "UIStatusBarStyleDarkContent" {
-                    if #available(iOS 13.0, *) {
-                        self.statusBarStyle = .darkContent
-                    } else {
-                        self.statusBarStyle = .default
-                    }
+                    self.statusBarStyle = .darkContent
                 } else if statusBarStyle != "UIStatusBarStyleDefault" {
                     self.statusBarStyle = .lightContent
                 }
@@ -254,16 +265,10 @@ extension CAPBridgeViewController {
     }
 
     @objc public func setServerBasePath(path: String) {
-        let url = URL(fileURLWithPath: path, isDirectory: true)
-        guard let capBridge = capacitorBridge, FileManager.default.fileExists(atPath: url.path) else {
-            return
-        }
-        capBridge.config = capBridge.config.updatingAppLocation(url)
-        capBridge.webViewAssetHandler.setAssetPath(url.path)
-        if let url = capacitorBridge?.config.serverURL {
-            DispatchQueue.main.async { [weak self] in
-                _ = self?.webView?.load(URLRequest(url: url))
-            }
+        guard let capBridge = capacitorBridge else { return }
+        capBridge.setServerBasePath(path)
+        DispatchQueue.main.async { [weak self] in
+            _ = self?.webView?.load(URLRequest(url: capBridge.config.serverURL))
         }
     }
 }
@@ -283,7 +288,6 @@ extension CAPBridgeViewController {
         aWebView.scrollView.bounces = false
         aWebView.scrollView.contentInsetAdjustmentBehavior = configuration.contentInsetAdjustmentBehavior
         aWebView.allowsLinkPreview = configuration.allowLinkPreviews
-        aWebView.configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         aWebView.scrollView.isScrollEnabled = configuration.scrollingEnabled
         if let overrideUserAgent = configuration.overridenUserAgentString {
             aWebView.customUserAgent = overrideUserAgent
@@ -291,23 +295,20 @@ extension CAPBridgeViewController {
         if let backgroundColor = configuration.backgroundColor {
             aWebView.backgroundColor = backgroundColor
             aWebView.scrollView.backgroundColor = backgroundColor
-        } else if #available(iOS 13, *) {
+        } else {
             // Use the system background colors if background is not set by user
             aWebView.backgroundColor = UIColor.systemBackground
             aWebView.scrollView.backgroundColor = UIColor.systemBackground
         }
-        #if DEBUG
-            if #available(iOS 16.4, *) {
-                aWebView.isInspectable = true
-            }
-        #endif
-                
         aWebView.capacitor.setKeyboardShouldRequireUserInteraction(false)
         // set our ivar
         webView = aWebView
         // set our delegates
         aWebView.uiDelegate = delegationHandler
         aWebView.navigationDelegate = delegationHandler
+        if !configuration.zoomingEnabled {
+            aWebView.scrollView.delegate = delegationHandler
+        }
     }
 
     private func updateBinaryVersion() {
@@ -318,11 +319,10 @@ extension CAPBridgeViewController {
               let versionName = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else {
             return
         }
-        let prefs = UserDefaults.standard
-        prefs.set(versionCode, forKey: "lastBinaryVersionCode")
-        prefs.set(versionName, forKey: "lastBinaryVersionName")
-        prefs.set("", forKey: "serverBasePath")
-        prefs.synchronize()
+        let store = KeyValueStore.standard
+        store["lastBinaryVersionCode"] = versionCode
+        store["lastBinaryVersionName"] = versionName
+        store["serverBasePath"] = nil as String?
     }
 
     private func logWarnings(for descriptor: InstanceDescriptor) {
@@ -361,11 +361,11 @@ extension CAPBridgeViewController {
 }
 
 extension CAPBridgeViewController: CAPBridgeDelegate {
-    internal var bridgedWebView: WKWebView? {
+    public var bridgedWebView: WKWebView? {
         return webView
     }
 
-    internal var bridgedViewController: UIViewController? {
+    public var bridgedViewController: UIViewController? {
         return self
     }
 }

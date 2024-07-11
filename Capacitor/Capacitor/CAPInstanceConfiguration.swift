@@ -1,22 +1,38 @@
 import Foundation
 
 extension InstanceConfiguration {
-    @objc var appStartFileURL: URL {
+    @objc public var appStartFileURL: URL {
         if let path = appStartPath {
             return appLocation.appendingPathComponent(path)
         }
         return appLocation
     }
 
-    @objc var appStartServerURL: URL {
+    @objc public var appStartServerURL: URL {
         if let path = appStartPath {
             return serverURL.appendingPathComponent(path)
         }
         return serverURL
     }
 
+    @objc public var errorPathURL: URL? {
+        guard let errorPath = errorPath else {
+            return nil
+        }
+
+        return localURL.appendingPathComponent(errorPath)
+    }
+
+    @available(*, deprecated, message: "Use getPluginConfig")
     @objc public func getPluginConfigValue(_ pluginId: String, _ configKey: String) -> Any? {
         return (pluginConfigurations as? JSObject)?[keyPath: KeyPath("\(pluginId).\(configKey)")]
+    }
+
+    @objc public func getPluginConfig(_ pluginId: String) -> PluginConfig {
+        if let cfg = (pluginConfigurations as? JSObject)?[keyPath: KeyPath("\(pluginId)")] as? JSObject {
+            return PluginConfig(config: cfg)
+        }
+        return PluginConfig(config: JSObject())
     }
 
     @objc public func shouldAllowNavigation(to host: String) -> Bool {
