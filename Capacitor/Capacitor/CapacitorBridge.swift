@@ -39,8 +39,6 @@ open class CapacitorBridge: NSObject, CAPBridgeProtocol {
 
     public let autoRegisterPlugins: Bool
 
-    public var notificationRouter: NotificationRouter
-
     public var isSimEnvironment: Bool {
         #if targetEnvironment(simulator)
         return true
@@ -202,8 +200,6 @@ open class CapacitorBridge: NSObject, CAPBridgeProtocol {
         self.webViewDelegationHandler = delegationHandler
         self.config = configuration
         self.cordovaParser = cordovaConfiguration
-        self.notificationRouter = NotificationRouter()
-        self.notificationRouter.handleApplicationNotifications = configuration.handleApplicationNotifications
         self.autoRegisterPlugins = autoRegisterPlugins
         super.init()
 
